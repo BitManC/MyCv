@@ -41,55 +41,21 @@ imagenet_stds = [0.229, 0.224, 0.225]
 
 df_img_data = parse_images(threeBandImagesDir)
 
-# img_mins = np.min(df_img_data.img_channel_min.to_list(), axis=0)
-# img_maxs = np.max(df_img_data.img_channel_max.to_list(), axis=0)
-# tf_adversarial = torchvision.transforms.Compose([
-#     ImgMinMaxScaler(channel_min=img_mins, channel_max=img_maxs),
-#     ImgResize((300, 300)),
-#     ImgToTensor(),
-#     torchvision.transforms.Normalize(mean=imagenet_means, std=imagenet_stds)
-# ])
-
 df_train_val_img_data = df_img_data.loc[df_img_data.ImageId.isin(df_train_val_all_classes.ImageId.unique())]
-
-# df_test_img_data = df_img_data.loc[~df_img_data.ImageId.isin(df_train_val_all_classes.ImageId.unique())]
-# ds_adversarial_complete = TiffImgDataset(img_ids=df_train_val_img_data.ImageId.to_list()
-#                                                  + df_test_img_data.ImageId.to_list(), transform=tf_adversarial)
-
 df_train_val_buildings = df_train_val_all_classes[df_train_val_all_classes.ClassType == 1]
 df_train_val_buildings = parse_mask_data(df_train_val_buildings)
 df_train_val_buildings = df_train_val_buildings.join(df_train_val_img_data.set_index('ImageId'), on='ImageId')
 df_train_val_buildings.to_csv("df_train_val_buildings.csv", index=False)
-# df_train_val_buildings[df_train_val_buildings.NumPolygons == 0].sort_values(by="test_similarity")
-# df_train_val_buildings[df_train_val_buildings.NumPolygons != 0].sort_values(by="test_similarity")
 
 val_img_ids = ["6100_2_2", "6140_3_1"]
 df_val_buildings = df_train_val_buildings[df_train_val_buildings.ImageId.isin(val_img_ids)]
 df_train_buildings = df_train_val_buildings[~df_train_val_buildings.ImageId.isin(val_img_ids) & df_train_val_buildings.NumPolygons != 0]
 
 trainValPreprocessedDir = rootDir / "preprocessed"
-
-# if not trainValPreprocessedDir.exists():
-#     trainValPreprocessedDir.mkdir()
-#
-# def preprocess_images(imageIds=df_train_val_buildings.ImageId, dst=trainValPreprocessedDir):
-#     for imageId in tqdm(imageIds, leave=False):
-#         band_paths = [threeBandImagesDir / f"{imageId}.tif",
-#                       # sixteenBandImagesDir / f"{imageId}_M.tif",
-#                       # sixteenBandImagesDir / f"{imageId}_P.tif"
-#                       ]
-#         stack(band_paths=band_paths, out_path=dst / f"{imageId}.tif")
-#
-# mean, std = calculate_channel_means_and_stds(imageIds=df_train_buildings.ImageId, img_dir=trainValPreprocessedDir,
-#                                      on_normalized=True)
-#-------------------------------------------Training-------------------------------------------------------------------#
-
 croppedImgDir = rootDir / "cropped_imgs"
 croppedMaskDir = rootDir / "cropped_masks"
-
-trainCroppedImgDir = croppedImgDir / "training_set"
-trainCroppedMaskDir = croppedMaskDir / "training_set"
-
+trainCroppedImgDir = croppedImgDir / "training_set"   # train input
+trainCroppedMaskDir = croppedMaskDir / "training_set"  # train label
 validationCroppedImgDir = croppedImgDir / "validation_set"
 validationCroppedMaskDir = croppedMaskDir / "validation_set"
 
@@ -109,7 +75,6 @@ validation_cropper = Cropper(crop_height=1110, crop_width=1110)
 # Create validation crops
 validation_cropper.crop_all(df_val_buildings.ImageId, trainValPreprocessedDir, validationCroppedImgDir, validationCroppedMaskDir)
 
-
 # Trainings and validation transformations
 tf_train = ImgMaskTransformCompose([
      ImgMaskMinMaxScaler(img_mins=0, img_maxs=2047),
@@ -124,13 +89,7 @@ tf_valid = ImgMaskTransformCompose([
     ImgMaskMinMaxScaler(img_mins=0, img_maxs=2047),
     ImgMaskToTensor(),
     ImgMaskTensorNormalize(mean=imagenet_means, std=imagenet_stds)
-    ]
-)
-
-# Training data
-
-ds_train = SatelliteDataset(trainCroppedImgDir, trainCroppedMaskDir, transform=tf_train)
-ds_valid = SatelliteDataset(validationCroppedImgDir, validationCroppedMaskDir, transform=tf_valid)
+    ])
 
 class CropRecreator:
     def __init__(self, cropper=training_cropper, image_ids=df_train_buildings.ImageId,
@@ -149,6 +108,11 @@ class CropRecreator:
             self.cropper.crop_all(self.image_ids, self.src_image_dir, self.crop_image_dir, self.crop_mask_dir)
             tqdm.write("Recreated random crops!")
 
+# Training data
+
+ds_train = SatelliteDataset(trainCroppedImgDir, trainCroppedMaskDir, transform=tf_train)
+ds_valid = SatelliteDataset(validationCroppedImgDir, validationCroppedMaskDir, transform=tf_valid)
+
 # DataLoader
 BATCH_SIZE = 24
 modelSaveDir = rootDir.parent / "models"
@@ -156,7 +120,7 @@ modelSaveDir = rootDir.parent / "models"
 dl_train = DataLoader(ds_train,
                       batch_size=BATCH_SIZE,
                       shuffle=True,
-                      num_workers=2)
+                      num_workers=0)
 
 dl_valid = DataLoader(ds_valid,
                       batch_size=8,

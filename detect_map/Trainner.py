@@ -177,10 +177,8 @@ class MetricRecorder:
 
     def show_train_val_metric_curve(self, metric="loss", figsize=(10, 8)):
         fig, ax = plt.subplots(figsize=figsize)
-
         train_pd = self.get_records_dataframe()
         val_pd = self.get_records_dataframe(training=False)
-
         train_pd.plot(y=metric, ax=ax, label=f"train-{metric}")
         val_pd.plot(y=metric, ax=ax, label=f"val-{metric}")
         plt.show()
